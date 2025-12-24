@@ -228,13 +228,17 @@ async def handle_sse(request):
 
 async def serve_static(request):
     """Serve the map viewer HTML"""
-    html_path = Path(__file__).parent / "client.html"
-    if html_path.exists():
-        return Response(
-            content=html_path.read_text(),
-            media_type="text/html"
-        )
-    return Response("client.html not found", status_code=404)
+    # Use importlib to find the resource within the package
+    try:
+        from importlib.resources import files
+        html_content = files("mcp_map_server").joinpath("client.html").read_text()
+        return Response(content=html_content, media_type="text/html")
+    except Exception:
+        # Fallback for local dev if package not installed
+        html_path = Path(__file__).parent / "client.html"
+        if html_path.exists():
+            return Response(content=html_path.read_text(), media_type="text/html")
+        return Response("client.html not found", status_code=404)
 
 # Create Session Manager
 session_manager = StreamableHTTPSessionManager(
@@ -264,6 +268,10 @@ routes = [
 
 app = Starlette(routes=routes, lifespan=lifespan)
 
-if __name__ == "__main__":
+
+def main():
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8081)
+
+if __name__ == "__main__":
+    main()

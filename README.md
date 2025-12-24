@@ -32,16 +32,18 @@ A Model Context Protocol (MCP) server that provides a dynamic map interface. Thi
 
 ### Local Development
 
-1.  **Install dependencies:**
+1.  **Clone and install:**
     ```bash
-    uv venv
+    git clone https://github.com/boettiger-lab/mcp-map-server.git
+    cd mcp-map-server
+    python -m venv .venv
     source .venv/bin/activate
-    uv pip install -r requirements.txt
+    pip install -e .[dev]
     ```
 
 2.  **Start the server:**
     ```bash
-    python server.py
+    mcp-map-server
     ```
 
 3.  **Open the Map:**
@@ -50,19 +52,15 @@ A Model Context Protocol (MCP) server that provides a dynamic map interface. Thi
 4.  **Connect an MCP Client:**
     Configure your MCP client (e.g., Claude Desktop, Cursor, or a custom script) to connect to `http://localhost:8081/mcp/`.
 
-### Verification
+### Running Tests
 
-Run the included verification script to test the tools:
+Run the test suite with:
 
 ```bash
-python verify_tools.py test-session
+pytest
 ```
 
-This will:
-1.  Connect to the server via MCP.
-2.  Add a sample raster layer (OpenStreetMap).
-3.  Center the map.
-4.  You should see the map update in your browser (ensure you set the session cookie if testing isolated sessions).
+The tests will automatically start a test server on port 8082.
 
 ### Deployment (Kubernetes)
 
@@ -91,7 +89,7 @@ To use this tool with MCP-compatible clients (like Claude Desktop or the Claude 
 }
 ```
 
-**Running on Kubernetes:**
+**Using the deployed server from NRP:**
 ```json
 {
   "mcpServers": {
