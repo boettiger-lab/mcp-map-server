@@ -1,0 +1,46 @@
+# .dockerignore for mcp-map-server
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Development files
+.git/
+.gitignore
+*.md
+!README.md
+PROGRESS.md
+examples.md
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Tests
+test_*.py
+*_test.py
+
+# Local state (not needed in container)
+map_state.json
+
+# K8s files (not needed in container)
+k8s/
+
+# Original polling version
+server.py
+client.html

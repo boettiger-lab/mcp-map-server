@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+
+# State files
+map_state.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
