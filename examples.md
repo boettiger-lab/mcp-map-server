@@ -17,13 +17,15 @@ These examples show how an LLM (via MCP client like Claude Desktop) would use th
     "type": "vector",
     "source": {
       "type": "vector",
-      "url": "pmtiles://https://minio.carlboettiger.info/public-pmtiles/wdpa_global.pmtiles"
+      "tiles": ["https://demotiles.maplibre.org/tiles/{z}/{x}/{y}.pbf"],
+      "minzoom": 0,
+      "maxzoom": 5
     },
     "layers": [{
       "id": "wdpa-fill",
       "type": "fill",
       "source": "wdpa",
-      "source-layer": "default",
+      "source-layer": "countries",
       "paint": {
         "fill-color": "#4CAF50",
         "fill-opacity": 0.5
@@ -130,10 +132,12 @@ These examples show how an LLM (via MCP client like Claude Desktop) would use th
     "type": "raster",
     "source": {
       "type": "raster",
-      "tiles": ["https://minio.carlboettiger.info/public-cog/carbon/vulnerable/{z}/{x}/{y}.png"],
-      "tileSize": 256
-    },
-    "visible": true
+      "tiles": ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+      "tileSize": 256,
+      "attribution": "&copy; OpenStreetMap Contributors",
+      "minzoom": 0,
+      "maxzoom": 19
+    }
   }
 }
 

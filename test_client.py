@@ -49,10 +49,11 @@ async def test_map_server():
                 "type": "raster",
                 "source": {
                     "type": "raster",
-                    "tiles": ["https://minio.carlboettiger.info/public-cog/carbon/vulnerable/{z}/{x}/{y}.png"],
+                    "tiles": ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
                     "tileSize": 256,
+                    "attribution": "&copy; OpenStreetMap Contributors",
                     "minzoom": 0,
-                    "maxzoom": 8
+                    "maxzoom": 19
                 },
                 "visible": True
             })
@@ -66,13 +67,15 @@ async def test_map_server():
                 "type": "vector",
                 "source": {
                     "type": "vector",
-                    "url": "pmtiles://https://minio.carlboettiger.info/public-pmtiles/wdpa_global.pmtiles"
+                    "tiles": ["https://demotiles.maplibre.org/tiles/{z}/{x}/{y}.pbf"],
+                    "minzoom": 0,
+                    "maxzoom": 5
                 },
                 "layers": [{
                     "id": "wdpa-fill",
                     "type": "fill",
                     "source": "wdpa",
-                    "source-layer": "default",
+                    "source-layer": "countries",
                     "paint": {
                         "fill-color": "#00ff00",
                         "fill-opacity": 0.3
@@ -81,7 +84,7 @@ async def test_map_server():
                     "id": "wdpa-outline",
                     "type": "line",
                     "source": "wdpa",
-                    "source-layer": "default",
+                    "source-layer": "countries",
                     "paint": {
                         "line-color": "#006600",
                         "line-width": 1

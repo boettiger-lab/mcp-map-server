@@ -36,10 +36,11 @@ map_state = {
             "visible": True,
             "source": {
                 "type": "raster",
-                "tiles": ["https://minio.carlboettiger.info/public-cog/glwd/glwd/{z}/{x}/{y}.png"],
+                "tiles": ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
                 "tileSize": 256,
+                "attribution": "&copy; OpenStreetMap Contributors",
                 "minzoom": 0,
-                "maxzoom": 8
+                "maxzoom": 19
             },
             "paint": {}
         }
