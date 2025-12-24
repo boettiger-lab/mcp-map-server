@@ -180,7 +180,7 @@ These examples show how an LLM (via MCP client like Claude Desktop) would use th
     "type": "vector",
     "source": {
       "type": "vector",
-      "url": "pmtiles://https://minio.carlboettiger.info/public-pmtiles/wdpa_global.pmtiles"
+      "url": "pmtiles://https://s3.nrp-nautilus.io/public-wdpa/WDPA_Dec2025.pmtiles"
     },
     "layers": [{
       "id": "wdpa-state-fill",
@@ -211,7 +211,7 @@ These examples show how an LLM (via MCP client like Claude Desktop) would use th
     "type": "vector",
     "source": {
       "type": "vector",
-      "url": "pmtiles://https://minio.carlboettiger.info/public-pmtiles/wdpa_global.pmtiles"
+      "url": "pmtiles://https://s3.nrp-nautilus.io/public-wdpa/WDPA_Dec2025.pmtiles"
     },
     "layers": [{
       "id": "wdpa-private-fill",
@@ -288,82 +288,6 @@ You can see the distribution and size differences between public and private con
 ```
 
 **LLM response:** "I've cleared all layers from the map and reset the view. The map is now blank and ready for new visualizations."
-
----
-
-## Example 7: Complex Multi-Layer Analysis
-
-**User:** "Show me Ramsar wetlands in Southeast Asia that overlap with high carbon areas"
-
-**LLM tool calls:**
-
-```json
-// Add carbon layer first (as background)
-{
-  "tool": "add_layer",
-  "arguments": {
-    "id": "carbon",
-    "type": "raster",
-    "source": {
-      "type": "raster",
-      "tiles": ["https://minio.carlboettiger.info/public-cog/carbon/vulnerable/{z}/{x}/{y}.png"],
-      "tileSize": 256
-    }
-  }
-}
-
-// Add Ramsar sites
-{
-  "tool": "add_layer",
-  "arguments": {
-    "id": "ramsar",
-    "type": "vector",
-    "source": {
-      "type": "vector",
-      "url": "pmtiles://https://minio.carlboettiger.info/public-pmtiles/ramsar.pmtiles"
-    },
-    "layers": [{
-      "id": "ramsar-fill",
-      "type": "fill",
-      "source": "ramsar",
-      "source-layer": "default",
-      "paint": {
-        "fill-color": "#0080ff",
-        "fill-opacity": 0.5
-      }
-    }, {
-      "id": "ramsar-outline",
-      "type": "line",
-      "source": "ramsar",
-      "source-layer": "default",
-      "paint": {
-        "line-color": "#0040ff",
-        "line-width": 2
-      }
-    }]
-  }
-}
-
-// Filter to Southeast Asia countries
-{
-  "tool": "filter_layer",
-  "arguments": {
-    "layer_id": "ramsar-fill",
-    "filter": ["in", "iso3", "THA", "VNM", "MYS", "IDN", "PHL", "KHM", "LAO", "MMR"]
-  }
-}
-
-// Set view to Southeast Asia
-{
-  "tool": "set_map_view",
-  "arguments": {
-    "center": [105, 10],
-    "zoom": 5
-  }
-}
-```
-
-**LLM response:** "I've displayed Ramsar wetland sites in Southeast Asia (Thailand, Vietnam, Malaysia, Indonesia, Philippines, Cambodia, Laos, Myanmar) overlaid on the vulnerable carbon layer. The blue outlined areas are internationally recognized wetlands, and you can see which ones coincide with high carbon storage (darker red/brown tones)."
 
 ---
 

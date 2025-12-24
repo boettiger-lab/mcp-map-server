@@ -48,7 +48,7 @@ A Model Context Protocol (MCP) server that provides a dynamic map interface. Thi
     Navigate to `http://localhost:8081` in your browser.
 
 4.  **Connect an MCP Client:**
-    Configure your MCP client (e.g., Claude Desktop, Cursor, or a custom script) to connect to `http://localhost:8081/mcp`.
+    Configure your MCP client (e.g., Claude Desktop, Cursor, or a custom script) to connect to `http://localhost:8081/mcp/`.
 
 ### Verification
 
@@ -64,19 +64,45 @@ This will:
 3.  Center the map.
 4.  You should see the map update in your browser (ensure you set the session cookie if testing isolated sessions).
 
-## Kubernetes Deployment
-
-Configuration files are in the `k8s/` directory.
+### Deployment (Kubernetes)
 
 1.  **Deploy:**
     ```bash
-    kubectl apply -f k8s/
+    kubectl apply -f k8s/configmap.yaml
+    kubectl apply -f k8s/deployment.yaml
+    kubectl apply -f k8s/service.yaml
+    kubectl apply -f k8s/ingress.yaml
     ```
 
-2.  **Access:**
-    The service is exposed on port 8081 (NodePort/LoadBalancer depending on your cluster config).
+## Tool Usage / Configuration
 
-## API & Tools
+### VSCode (Claude/Cline) & Claude Desktop
+
+To use this tool with MCP-compatible clients (like Claude Desktop or the Claude extension for VSCode), add the following to your MCP configuration file (e.g., `claude_desktop_config.json`):
+
+**Running Locally:**
+```json
+{
+  "mcpServers": {
+    "map-server": {
+      "url": "http://localhost:8081/mcp/"
+    }
+  }
+}
+```
+
+**Running on Kubernetes:**
+```json
+{
+  "mcpServers": {
+    "map-server": {
+      "url": "https://mcp-map.nrp-nautilus.io/mcp/"
+    }
+  }
+}
+```
+
+### API & Tools
 
 See [examples.md](examples.md) for detailed JSON payloads for all available tools.
 
