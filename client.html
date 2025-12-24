@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MCP Map Viewer</title>
+    <title>MCP Map Viewer (SSE)</title>
 
     <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
     <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
@@ -63,6 +63,19 @@
         #status-indicator.connected {
             background: #4caf50;
             box-shadow: 0 0 5px rgba(76, 175, 80, 0.5);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
         }
 
         #layers-list {
@@ -106,12 +119,19 @@
             color: #888;
         }
 
-        #poll-info {
+        #connection-info {
             margin-top: 10px;
             font-size: 11px;
             color: #666;
             padding-top: 10px;
             border-top: 1px solid #ddd;
+        }
+
+        #session-id {
+            font-family: monospace;
+            font-size: 10px;
+            color: #999;
+            word-break: break-all;
         }
     </style>
 </head>
@@ -120,7 +140,7 @@
     <div id="map"></div>
 
     <div id="info">
-        <h3>🗺️ MCP Map Viewer</h3>
+        <h3>🗺️ MCP Map Viewer (SSE)</h3>
 
         <div id="status">
             <div id="status-indicator"></div>
@@ -134,8 +154,10 @@
 
         <div id="layers-list"></div>
 
-        <div id="poll-info">
-            Polling every 500ms<br>
+        <div id="connection-info">
+            <strong>Mode:</strong> Server-Sent Events<br>
+            <strong>Session:</strong><br>
+            <div id="session-id">-</div>
             Last update: <span id="last-update">-</span>
         </div>
     </div>
@@ -163,30 +185,68 @@
         });
 
         // Track current state
-        let currentStateVersion = null;
         let currentLayers = {};
+        let eventSource = null;
+        let reconnectTimeout = null;
 
-        // Poll for state updates
-        async function pollMapState() {
-            try {
-                const response = await fetch('/api/map-state');
-                const state = await response.json();
+        function connectSSE() {
+            console.log('[SSE] Connecting...');
 
-                // Update UI
-                document.getElementById('state-version').textContent = state.version || '-';
-                document.getElementById('layer-count').textContent = Object.keys(state.layers || {}).length;
-                document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
+            eventSource = new EventSource('/events');
+
+            eventSource.onopen = () => {
+                console.log('[SSE] Connected');
                 document.getElementById('status-indicator').className = 'connected';
-                document.getElementById('status-text').textContent = 'Connected';
+                document.getElementById('status-text').textContent = 'Connected (SSE)';
 
-                // Apply state changes to map
-                applyMapState(state);
+                // Clear any reconnection timeout
+                if (reconnectTimeout) {
+                    clearTimeout(reconnectTimeout);
+                    reconnectTimeout = null;
+                }
 
-            } catch (error) {
-                console.error('Poll failed:', error);
+                // Get session ID from cookie
+                const sessionCookie = document.cookie
+                    .split('; ')
+                    .find(row => row.startsWith('mcp_map_session='));
+                if (sessionCookie) {
+                    const sessionId = sessionCookie.split('=')[1];
+                    document.getElementById('session-id').textContent = sessionId;
+                }
+            };
+
+            eventSource.onmessage = (event) => {
+                try {
+                    const state = JSON.parse(event.data);
+
+                    // Update UI
+                    document.getElementById('state-version').textContent = state.version || '-';
+                    document.getElementById('layer-count').textContent = Object.keys(state.layers || {}).length;
+                    document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
+
+                    // Apply state to map
+                    applyMapState(state);
+                } catch (error) {
+                    console.error('[SSE] Error parsing message:', error);
+                }
+            };
+
+            eventSource.onerror = (error) => {
+                console.error('[SSE] Connection error:', error);
                 document.getElementById('status-indicator').className = '';
                 document.getElementById('status-text').textContent = 'Disconnected';
-            }
+
+                // Close and reconnect
+                eventSource.close();
+
+                // Reconnect after 2 seconds
+                if (!reconnectTimeout) {
+                    reconnectTimeout = setTimeout(() => {
+                        console.log('[SSE] Reconnecting...');
+                        connectSSE();
+                    }, 2000);
+                }
+            };
         }
 
         function applyMapState(state) {
@@ -212,7 +272,7 @@
                 updateLayer(layerId, layerConfig);
             }
 
-            // Remove layers that no longer exist in state
+            // Remove layers that no longer exist
             const stateLayerIds = Object.keys(state.layers || {});
             for (const existingId of Object.keys(currentLayers)) {
                 if (!stateLayerIds.includes(existingId)) {
@@ -220,7 +280,7 @@
                 }
             }
 
-            // Update layers list in UI
+            // Update UI
             updateLayersList(state.layers || {});
         }
 
@@ -228,24 +288,21 @@
             const isNew = !currentLayers[layerId];
 
             if (isNew) {
-                // Add new layer
-                console.log('Adding layer:', layerId, config);
+                console.log('[Map] Adding layer:', layerId);
 
                 // Add source
                 if (!map.getSource(layerId)) {
                     map.addSource(layerId, config.source);
                 }
 
-                // Add layer(s)
+                // Add layers
                 if (config.layers && config.layers.length > 0) {
-                    // Vector layer with multiple sublayers
                     for (const layerSpec of config.layers) {
                         if (!map.getLayer(layerSpec.id)) {
                             map.addLayer(layerSpec);
                         }
                     }
                 } else if (config.type === 'raster') {
-                    // Simple raster layer
                     if (!map.getLayer(layerId)) {
                         map.addLayer({
                             id: layerId,
@@ -275,7 +332,7 @@
                 }
             }
 
-            // Apply paint properties
+            // Apply paint
             if (config.layer_paint) {
                 for (const [lid, paintProps] of Object.entries(config.layer_paint)) {
                     if (map.getLayer(lid)) {
@@ -290,11 +347,10 @@
         }
 
         function removeLayer(layerId) {
-            console.log('Removing layer:', layerId);
+            console.log('[Map] Removing layer:', layerId);
             const config = currentLayers[layerId];
 
             if (config) {
-                // Remove all associated layers
                 const layerIds = config.layers ? config.layers.map(l => l.id) : [layerId];
                 for (const lid of layerIds) {
                     if (map.getLayer(lid)) {
@@ -302,7 +358,6 @@
                     }
                 }
 
-                // Remove source
                 if (map.getSource(layerId)) {
                     map.removeSource(layerId);
                 }
@@ -342,11 +397,17 @@
             }
         }
 
-        // Start polling when map is loaded
+        // Start SSE connection when map is loaded
         map.on('load', () => {
-            console.log('Map loaded, starting state polling...');
-            pollMapState(); // Initial poll
-            setInterval(pollMapState, 500); // Poll every 500ms
+            console.log('[Map] Loaded, connecting to SSE...');
+            connectSSE();
+        });
+
+        // Clean up on page unload
+        window.addEventListener('beforeunload', () => {
+            if (eventSource) {
+                eventSource.close();
+            }
         });
     </script>
 </body>

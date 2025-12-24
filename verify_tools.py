@@ -1,25 +1,24 @@
 import asyncio
 import sys
 import json
-from mcp.client.stdio import stdio_client, StdioServerParameters
+from mcp.client.streamable_http import streamable_http_client
 from mcp.client.session import ClientSession
 
 async def verify_tools(session_id):
     """Verify MCP map server tools with a specific session ID"""
+    # Connect to the running server via SSE/HTTP
+    # Note: StreamableHTTP uses SSE for transport currently
     
-    server_params = StdioServerParameters(
-        command=sys.executable,
-        args=["server_sse.py"],
-        env=None
-    )
+    print(f"🔌 Connecting to MCP Map Server at http://localhost:8081/mcp (Session: {session_id})...")
     
-    print(f"🔌 Connecting to MCP Map Server (Session: {session_id})...")
-    async with stdio_client(server_params) as (read, write):
+    # We use the streamable_http_client helper
+    async with streamable_http_client("http://localhost:8081/mcp") as streams:
+        read, write = streams[0], streams[1]
         async with ClientSession(read, write) as session:
             await session.initialize()
             
             # Test 1: Add a raster layer
-            print("\n1️⃣ Adding a raster layer...")
+            print("1️⃣ Adding a raster layer...")
             result = await session.call_tool("add_layer", {
                 "session_id": session_id,
                 "id": "verify_raster",
@@ -37,7 +36,7 @@ async def verify_tools(session_id):
             print(f"   Result: {result.content[0].text}")
 
             # Test 2: Set map view
-            print("\n2️⃣ Setting map view...")
+            print("2️⃣ Setting map view...")
             result = await session.call_tool("set_map_view", {
                 "session_id": session_id,
                 "center": [0, 0],
@@ -45,12 +44,11 @@ async def verify_tools(session_id):
             })
             print(f"   Result: {result.content[0].text}")
             
-            print("\n✅ Verification completed!")
+            print("✅ Verification completed!")
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python verify_tools.py <session_id>")
         sys.exit(1)
-    
-    session_id = sys.argv[1]
-    asyncio.run(verify_tools(session_id))
+        
+    asyncio.run(verify_tools(sys.argv[1]))

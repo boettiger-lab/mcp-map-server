@@ -17,3 +17,4 @@ map_state.json
 *.swp
 *.swo
 *~
+server.log

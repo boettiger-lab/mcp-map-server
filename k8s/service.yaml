@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-map-server
+  labels:
+    app: mcp-map-server
+spec:
+  type: ClusterIP
+  selector:
+    app: mcp-map-server
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8081
+      name: http
