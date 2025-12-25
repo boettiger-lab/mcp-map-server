@@ -103,24 +103,92 @@ See `system-prompt.example.md` for a complete example of layer configuration.
 
     The ConfigMap `mcp-map-config` should contain your system prompt markdown in the `system-prompt` key.
 
-## Tool Usage / Configuration
+## Architecture: Independent Maps
 
-### VSCode (Claude/Cline) & Claude Desktop
+The MCP Map Server follows a **Tool-Centric** model. Instead of one shared map, it provides tools that help clients manage their own independent map configurations.
 
-To use this tool with MCP-compatible clients (like Claude Desktop or the Claude extension for VSCode), add the following to your MCP configuration file (e.g., `claude_desktop_config.json`):
+### Core Usage Scenarios
 
-**Running Locally:**
+1.  **Local Private Map (VSCode/Local Agent)**
+    - Run the server locally: `mcp-map-server`
+    - View your map at: `http://localhost:8081/`
+    - Everything stays on your machine. Your local AI agent updates your local browser via SSE.
+
+2.  **Private Session on Public Server**
+    - Visit the shared server with a unique session ID: 
+      `https://mcp-map.nrp-nautilus.io/?session=my-private-uuid`
+    - Tell your AI agent to use this `session_id`.
+    - Only you (and whoever has the ID) will see the updates.
+
+3.  **Stateless/Unhosted (Web Developers)**
+    - For clients like **LangChain-js** or custom web apps.
+    - Pass an existing map JSON string as the `state` argument to any tool.
+    - The tool returns the **full updated JSON** without saving anything to the server's memory.
+    - Your app can then render this JSON using its own viewer component.
+
+---
+
+## Tooling & API
+
+Every map-modifying tool returns the **full, updated map configuration** in JSON format. 
+
+### Available Tools
+
+- `add_layer`: Adds a raster (XYZ/Tiles) or vector (MVT/PMTiles) layer.
+- `set_map_view`: Moves the camera to a specific `center` and `zoom`.
+- `filter_layer`: Applies MapLibre filter expressions to an existing layer.
+- `set_layer_paint`: Dynamically modifies paint properties (colors, opacity, etc.).
+- `remove_layer`: Deletes a layer by ID.
+- `get_map_config`: Returns the current session/provided state as JSON.
+
+### MCP Client Configuration
+
+To use this with MCP-compatible clients like Claude Desktop or VSCode extensions, point them to the server.
+
+**Local Development (Recommended):**
+
+Local clients like Claude Desktop and VSCode expect **StdIO** transport when launching a command. The server now defaults to `stdio`.
+
+> [!TIP]
+> Use the **absolute path** to the executable in your config to avoid "command not found" (ENOENT) errors. Find it by running `which mcp-map-server`.
+
 ```json
 {
   "mcpServers": {
     "map-server": {
-      "url": "http://localhost:8081/mcp/"
+      "command": "/home/cboettig/.local/bin/mcp-map-server"
     }
   }
 }
 ```
 
-**Using the deployed server from NRP:**
+**Passing CLI Arguments (Transport, Prompts, etc.):**
+
+If you need to specify the transport explicitly or provide a custom system prompt file, use the `args` array. 
+
+> [!IMPORTANT]
+> Arguments must be passed as individual elements in the `args` array, NOT as part of the `command` string.
+
+```json
+{
+  "mcpServers": {
+    "map-server": {
+      "command": "/home/cboettig/.local/bin/mcp-map-server",
+      "args": [
+        "--transport", "stdio",
+        "--prompt-file", "/path/to/my-layers.md"
+      ]
+    }
+  }
+}
+```
+
+*Note: The server defaults to `stdio` when run as a command.*
+
+**Using the Shared Production Server:**
+
+Web-based or remote clients connect via **HTTP**.
+
 ```json
 {
   "mcpServers": {
@@ -130,17 +198,6 @@ To use this tool with MCP-compatible clients (like Claude Desktop or the Claude 
   }
 }
 ```
-
-### API & Tools
-
-See [examples.md](examples.md) for detailed JSON payloads for all available tools.
-
--   `add_layer`: Add raster (XYZ) or vector (MVT/PMTiles) layers.
--   `remove_layer`: Remove a layer by ID.
--   `set_map_view`: Fly to a location.
--   `list_layers`: Get current layer state.
--   `filter_layer`: Apply MapLibre filters.
--   `set_layer_paint`: Change layer styling.
 
 ## License
 

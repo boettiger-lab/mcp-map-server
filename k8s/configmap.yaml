@@ -16,8 +16,8 @@ data:
 
     - **ID**: `wdpa`
     - **Type**: Vector (PMTiles)
-    - **URL**: `pmtiles://https://s3.nrp-nautilus.io/public-wdpa/WDPA_Dec2025.pmtiles`
-    - **Source Layer**: `default`
+    - **URL**: `pmtiles://https://s3-west.nrp-nautilus.io/public-wdpa/WDPA_Dec2025.pmtiles`
+    - **Source Layer**: `wdpa`
     - **Description**: Global protected areas dataset with IUCN categorization and management information
 
     **Attributes for filtering and styling:**

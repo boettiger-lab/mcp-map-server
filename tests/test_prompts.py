@@ -4,7 +4,7 @@ Tests for MCP prompt functionality
 
 import os
 import pytest
-from mcp_map_server.server import DEFAULT_SYSTEM_PROMPT, SYSTEM_PROMPT
+from mcp_map_server.server import DEFAULT_LAYER_INFO, LAYER_INFO, CORE_INSTRUCTIONS
 
 
 # Import the actual handler functions from server module
@@ -57,7 +57,10 @@ async def test_default_prompt_content(monkeypatch):
     
     # Should contain guidance about configuration
     assert "MCP_MAP_SYSTEM_PROMPT" in prompt_text
-    assert "environment variable" in prompt_text.lower()
+    
+    # Should contain core instructions
+    assert "Instructions" in prompt_text
+    assert "add_layer" in prompt_text.lower()
     
     # Should contain example layer information
     assert "Protected Areas" in prompt_text or "WDPA" in prompt_text
@@ -86,7 +89,8 @@ async def test_custom_prompt_from_env(monkeypatch):
     result = await server_module.get_prompt("data_layers", None)
     prompt_text = result.messages[0].content.text
     
-    assert prompt_text == custom_prompt
+    assert custom_prompt in prompt_text
+    assert CORE_INSTRUCTIONS in prompt_text
     
     # Restore original module state
     monkeypatch.undo()
@@ -95,25 +99,23 @@ async def test_custom_prompt_from_env(monkeypatch):
 
 def test_default_prompt_structure():
     """Test that the default prompt has the expected structure"""
-    assert "# MCP Map Server" in DEFAULT_SYSTEM_PROMPT
-    assert "Data Layers" in DEFAULT_SYSTEM_PROMPT
-    assert "MCP_MAP_SYSTEM_PROMPT" in DEFAULT_SYSTEM_PROMPT
-    assert "IUCN_CAT" in DEFAULT_SYSTEM_PROMPT
-    assert "ISO3" in DEFAULT_SYSTEM_PROMPT
+    assert "Available Data Layers" in DEFAULT_LAYER_INFO
+    assert "MCP_MAP_SYSTEM_PROMPT" in DEFAULT_LAYER_INFO
+    assert "IUCN_CAT" in DEFAULT_LAYER_INFO
 
 
 def test_system_prompt_loaded():
-    """Test that SYSTEM_PROMPT is loaded (either from env or default)"""
-    assert SYSTEM_PROMPT
-    assert len(SYSTEM_PROMPT) > 0
+    """Test that LAYER_INFO is loaded (either from env or default)"""
+    assert LAYER_INFO
+    assert len(LAYER_INFO) > 0
 
 def test_load_system_prompt_logic(tmp_path, monkeypatch):
     """Test the priority of load_system_prompt function"""
-    from mcp_map_server.server import load_system_prompt, DEFAULT_SYSTEM_PROMPT
+    from mcp_map_server.server import load_system_prompt, DEFAULT_LAYER_INFO
     
     # Test Default
     monkeypatch.delenv("MCP_MAP_SYSTEM_PROMPT", raising=False)
-    assert load_system_prompt() == DEFAULT_SYSTEM_PROMPT
+    assert load_system_prompt() == DEFAULT_LAYER_INFO
     
     # Test Env
     monkeypatch.setenv("MCP_MAP_SYSTEM_PROMPT", "env-prompt")

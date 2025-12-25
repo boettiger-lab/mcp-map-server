@@ -19,15 +19,13 @@ These examples show how an LLM (via MCP client like Claude Desktop) would use th
     "type": "vector",
     "source": {
       "type": "vector",
-      "tiles": ["https://demotiles.maplibre.org/tiles/{z}/{x}/{y}.pbf"],
-      "minzoom": 0,
-      "maxzoom": 5
+      "url": "pmtiles://https://s3-west.nrp-nautilus.io/public-wdpa/WDPA_Dec2025.pmtiles"
     },
     "layers": [{
       "id": "wdpa-fill",
       "type": "fill",
       "source": "wdpa",
-      "source-layer": "countries",
+      "source-layer": "wdpa",
       "paint": {
         "fill-color": "#4CAF50",
         "fill-opacity": 0.5
@@ -182,13 +180,13 @@ These examples show how an LLM (via MCP client like Claude Desktop) would use th
     "type": "vector",
     "source": {
       "type": "vector",
-      "url": "pmtiles://https://s3.nrp-nautilus.io/public-wdpa/WDPA_Dec2025.pmtiles"
+      "url": "pmtiles://https://s3-west.nrp-nautilus.io/public-wdpa/WDPA_Dec2025.pmtiles"
     },
     "layers": [{
       "id": "wdpa-state-fill",
       "type": "fill",
       "source": "wdpa-state",
-      "source-layer": "default",
+      "source-layer": "wdpa",
       "paint": {
         "fill-color": "#2ca02c",
         "fill-opacity": 0.6
@@ -213,13 +211,13 @@ These examples show how an LLM (via MCP client like Claude Desktop) would use th
     "type": "vector",
     "source": {
       "type": "vector",
-      "url": "pmtiles://https://s3.nrp-nautilus.io/public-wdpa/WDPA_Dec2025.pmtiles"
+      "url": "pmtiles://https://s3-west.nrp-nautilus.io/public-wdpa/WDPA_Dec2025.pmtiles"
     },
     "layers": [{
       "id": "wdpa-private-fill",
       "type": "fill",
       "source": "wdpa-private",
-      "source-layer": "default",
+      "source-layer": "wdpa",
       "paint": {
         "fill-color": "#ff7f0e",
         "fill-opacity": 0.6

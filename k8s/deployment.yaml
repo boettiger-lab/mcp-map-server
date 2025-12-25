@@ -39,7 +39,7 @@ spec:
           - |
             cd /app && \
             pip install --no-cache-dir . && \
-            mcp-map-server
+            mcp-map-server --transport http
         ports:
         - containerPort: 8081
           name: http
