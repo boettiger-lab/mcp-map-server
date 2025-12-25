@@ -2,6 +2,8 @@
 
 These examples show how an LLM (via MCP client like Claude Desktop) would use the map server tools.
 
+> **Note:** For best results, configure the `MCP_MAP_SYSTEM_PROMPT` environment variable with information about your available data layers. This helps the AI understand which layers are available, their attributes, and how to use them. See the README for configuration instructions.
+
 ## Example 1: Show Protected Areas in India
 
 **User:** "Show me protected areas in India"

@@ -62,6 +62,35 @@ pytest
 
 The tests will automatically start a test server on port 8082.
 
+### Configuring Data Layer Information
+
+The server supports MCP prompts to provide AI agents with information about available data layers. This helps agents understand which layers are available, their attributes, and how to use them effectively.
+
+**Recommended: Use a Markdown file**
+
+You can provide a system prompt as a plain markdown file:
+
+```bash
+mcp-map-server --prompt-file my-layers.md
+```
+
+**Set via environment variable:**
+
+This is useful for containerized deployments:
+
+```bash
+export MCP_MAP_SYSTEM_PROMPT="$(cat my-layers.md)"
+mcp-map-server
+```
+
+**Direct string argument:**
+
+```bash
+mcp-map-server --prompt "# Available Layers\n\n- wdpa: Protected Areas..."
+```
+
+See `system-prompt.example.md` for a complete example of layer configuration.
+
 ### Deployment (Kubernetes)
 
 1.  **Deploy:**
@@ -71,6 +100,8 @@ The tests will automatically start a test server on port 8082.
     kubectl apply -f k8s/service.yaml
     kubectl apply -f k8s/ingress.yaml
     ```
+
+    The ConfigMap `mcp-map-config` should contain your system prompt markdown in the `system-prompt` key.
 
 ## Tool Usage / Configuration
 
