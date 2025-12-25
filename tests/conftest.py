@@ -36,8 +36,25 @@ def map_server():
 @pytest_asyncio.fixture
 async def mcp_client(map_server):
     """Provides a connected MCP ClientSession."""
-    async with streamable_http_client(TEST_URL) as streams:
+    # Manually manage context managers to avoid task scope issues
+    streams_context = streamable_http_client(TEST_URL)
+    streams = await streams_context.__aenter__()
+    
+    try:
         read, write = streams[0], streams[1]
-        async with ClientSession(read, write) as session:
-            await session.initialize()
-            yield session
+        session = ClientSession(read, write)
+        await session.__aenter__()
+        await session.initialize()
+        
+        yield session
+        
+    finally:
+        # Clean up in reverse order
+        try:
+            await session.__aexit__(None, None, None)
+        except Exception:
+            pass
+        try:
+            await streams_context.__aexit__(None, None, None)
+        except Exception:
+            pass
