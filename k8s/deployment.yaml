@@ -39,7 +39,7 @@ spec:
           - |
             cd /app && \
             pip install --no-cache-dir . && \
-            mcp-map-server --transport http
+            mcp-map-server --transport http --host 0.0.0.0 --port 8081 --base-url https://mcp-map.nrp-nautilus.io
         ports:
         - containerPort: 8081
           name: http

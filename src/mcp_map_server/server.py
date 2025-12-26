@@ -608,6 +608,7 @@ middleware = [
         allow_origins=["*"],  # Allow all origins for development
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=["mcp-session-id", "mcp-protocol-version"],  # Expose MCP headers to browser
         allow_credentials=True,
     )
 ]

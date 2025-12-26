@@ -5,16 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MCP Map Server Web Client</title>
-    
-    <!-- Import map for MCP SDK -->
-    <script type="importmap">
-    {
-        "imports": {
-            "@modelcontextprotocol/sdk": "https://esm.sh/@modelcontextprotocol/sdk@1.0.4"
-        }
-    }
-    </script>
-    
+
     <style>
         * {
             margin: 0;
@@ -331,12 +322,14 @@
 
             <div class="config-row" id="customEndpointRow" style="display: flex;">
                 <label for="customEndpoint">Endpoint:</label>
-                <input type="text" id="customEndpoint" value="https://openrouter.ai/api/v1/chat/completions" placeholder="https://openrouter.ai/api/v1/chat/completions">
+                <input type="text" id="customEndpoint" value="https://openrouter.ai/api/v1/chat/completions"
+                    placeholder="https://openrouter.ai/api/v1/chat/completions">
             </div>
 
             <div class="config-row">
                 <label for="llmModel">Model:</label>
-                <input type="text" id="llmModel" value="openai/gpt-oss-120b:free" placeholder="openai/gpt-oss-120b:free">
+                <input type="text" id="llmModel" value="openai/gpt-oss-120b:free"
+                    placeholder="openai/gpt-oss-120b:free">
             </div>
 
             <div class="config-row">
@@ -403,43 +396,103 @@
         }
 
         // Global variables for MCP client
-        let mcpClient = null;
+        let mcpSessionId = null;
+        let requestId = 0;
         let availableTools = [];
-        let mcpServerUrl = '';
-        let sessionId = 'web-client-' + Math.random().toString(36).substring(7);
+        // Change this URL to test locally: 'http://127.0.0.1:8081/mcp/'
+        let mcpServerUrl = 'https://mcp-map.nrp-nautilus.io/mcp/';
+
+        // MCP JSON-RPC helper
+        function createMCPRequest(method, params = {}) {
+            return {
+                jsonrpc: '2.0',
+                id: ++requestId,
+                method: method,
+                params: params
+            };
+        }
+
+        async function sendMCPRequest(request) {
+            const headers = {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json, text/event-stream',
+                'mcp-protocol-version': '2025-11-25'
+            };
+
+            if (mcpSessionId) {
+                headers['mcp-session-id'] = mcpSessionId;
+            }
+
+            const response = await fetch(mcpServerUrl, {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify(request)
+            });
+
+            // Extract session ID from response header
+            const sessionHeader = response.headers.get('mcp-session-id');
+            if (sessionHeader) {
+                mcpSessionId = sessionHeader;
+                console.log('Got session ID from header:', mcpSessionId);
+            } else {
+                console.log('No session ID in response headers');
+            }
+
+            // Parse response - could be JSON or SSE format
+            const contentType = response.headers.get('content-type');
+            const responseText = await response.text();
+
+            if (contentType && contentType.includes('text/event-stream')) {
+                // Parse SSE format: "event: message\ndata: {...}\n\n"
+                const dataMatch = responseText.match(/data: (.+)/);
+                if (dataMatch) {
+                    return JSON.parse(dataMatch[1]);
+                }
+            }
+
+            // Otherwise try to parse as JSON
+            return JSON.parse(responseText);
+        }
 
         // Global functions that need to be called from HTML
         async function initializeClient() {
-            // Use hardcoded production MCP server
-            mcpServerUrl = 'https://mcp-map.nrp-nautilus.io/mcp';
-
             try {
-                // Test connection by calling list_tools directly via HTTP
-                const response = await fetch(mcpServerUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        jsonrpc: '2.0',
-                        id: 1,
-                        method: 'tools/list',
-                        params: {}
-                    })
+                // Initialize MCP connection with proper Streamable HTTP protocol
+                const initRequest = createMCPRequest('initialize', {
+                    protocolVersion: '2025-11-25',
+                    capabilities: {},
+                    clientInfo: {
+                        name: 'map-web-client',
+                        version: '1.0.0'
+                    }
                 });
 
-                const result = await response.json();
-                
-                if (result.error) {
-                    throw new Error(result.error.message);
+                const initResult = await sendMCPRequest(initRequest);
+                console.log('Initialize result:', initResult);
+
+                // Send initialized notification
+                await sendMCPRequest({
+                    jsonrpc: '2.0',
+                    method: 'notifications/initialized'
+                });
+
+                // List available tools
+                const toolsRequest = createMCPRequest('tools/list');
+                const toolsResult = await sendMCPRequest(toolsRequest);
+                console.log('Tools result:', toolsResult);
+                availableTools = toolsResult?.result?.tools || [];
+                console.log('Available tools:', availableTools);
+                console.log('Final session ID:', mcpSessionId);
+
+                // Use 'default' if server doesn't provide a session ID (stateless mode)
+                if (!mcpSessionId) {
+                    mcpSessionId = 'default';
+                    console.log('Using default session ID');
                 }
 
-                availableTools = result.result.tools || [];
-                mcpClient = { connected: true }; // Simple flag to indicate connection
-
-                showStatus(`Connected! Discovered ${availableTools.length} MCP tools: ${availableTools.map(t => t.name).join(', ')}`, 'connected');
                 document.getElementById('sendButton').disabled = false;
                 document.getElementById('messageInput').focus();
+                showStatus('Connected to MCP server', 'success');
 
                 // Initialize empty map view
                 updateMapView();
@@ -451,6 +504,7 @@
         }
 
         async function sendMessage() {
+            console.log('sendMessage called');
             const input = document.getElementById('messageInput');
             const message = input.value.trim();
             const apiKey = document.getElementById('apiKey').value;
@@ -458,7 +512,9 @@
             const customEndpoint = document.getElementById('customEndpoint').value;
             const model = document.getElementById('llmModel').value;
 
-            if (!message || !mcpClient) return;
+            console.log('Message:', message, 'Session:', mcpSessionId, 'API Key present:', !!apiKey);
+
+            if (!message || !mcpSessionId) return;
 
             if (!apiKey) {
                 showStatus('Please enter your API key first', 'error');
@@ -472,8 +528,10 @@
             addMessage('assistant', 'Thinking...', true);
 
             try {
+                console.log('Sending message to LLM:', { provider, model, apiUrl: apiUrl.substring(0, 50) + '...' });
+                
                 // Determine API endpoint
-                const apiUrl = provider === 'custom' ? customEndpoint : 'https://api.openai.com/v1/chat/completions';
+                const apiUrl = (provider === 'custom' && customEndpoint) ? customEndpoint : 'https://api.openai.com/v1/chat/completions';
 
                 if (!apiUrl) {
                     throw new Error('Please configure API endpoint');
@@ -483,8 +541,8 @@
                 const response = await fetch(apiUrl, {
                     method: 'POST',
                     headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${apiKey}`
+                        'Authorization': `Bearer ${apiKey}`,
+                        'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
                         model: model || 'gpt-4-turbo-preview',
@@ -507,11 +565,11 @@ When creating maps:
 3. Apply appropriate filters using filter_layer
 4. Set the map view to show the relevant area using set_map_view
 
-Always include session_id parameter set to "${sessionId}" in all tool calls.
+Always include session_id parameter set to "${mcpSessionId || 'default'}" in all tool calls.
 Always use real geographic coordinates and appropriate zoom levels.
 
 Respond with tool calls in this exact format:
-TOOL_CALL: {"name": "tool_name", "arguments": {"param": "value", "session_id": "${sessionId}"}}
+TOOL_CALL: {"name": "tool_name", "arguments": {"param": "value", "session_id": "${mcpSessionId || 'default'}"}}
 
 You can make multiple tool calls by having multiple TOOL_CALL lines.`
                             },
@@ -522,7 +580,17 @@ You can make multiple tool calls by having multiple TOOL_CALL lines.`
                     })
                 });
 
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(`LLM API Error (${response.status}): ${errorData.error?.message || response.statusText}`);
+                }
+
                 const result = await response.json();
+                
+                if (!result.choices || !result.choices[0]?.message?.content) {
+                    throw new Error('Invalid response from LLM API');
+                }
+                
                 const assistantResponse = result.choices[0].message.content;
 
                 // Extract and execute tool calls
@@ -536,24 +604,13 @@ You can make multiple tool calls by having multiple TOOL_CALL lines.`
                         const toolCall = JSON.parse(match[1]);
                         console.log('Executing tool call:', toolCall);
 
-                        // Call MCP tool via direct HTTP
-                        const toolResponse = await fetch(mcpServerUrl, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json'
-                            },
-                            body: JSON.stringify({
-                                jsonrpc: '2.0',
-                                id: toolsExecuted + 2,
-                                method: 'tools/call',
-                                params: {
-                                    name: toolCall.name,
-                                    arguments: toolCall.arguments
-                                }
-                            })
+                        // Call MCP tool using JSON-RPC
+                        const toolRequest = createMCPRequest('tools/call', {
+                            name: toolCall.name,
+                            arguments: toolCall.arguments
                         });
+                        const toolResult = await sendMCPRequest(toolRequest);
 
-                        const toolResult = await toolResponse.json();
                         console.log('Tool result:', toolResult);
                         toolsExecuted++;
 
@@ -615,7 +672,8 @@ You can make multiple tool calls by having multiple TOOL_CALL lines.`
 
         function updateMapView() {
             const mapFrame = document.getElementById('mapFrame');
-            const baseUrl = mcpServerUrl.replace('/mcp', ''); // Remove /mcp suffix
+            const baseUrl = mcpServerUrl.replace(/\/mcp\/?$/, ''); // Remove /mcp or /mcp/ suffix
+            const sessionId = mcpSessionId || 'default';
             mapFrame.src = `${baseUrl}/?session=${sessionId}&t=${Date.now()}`;
         }
 
