@@ -52,6 +52,9 @@ async def test_default_prompt_content(monkeypatch):
     from importlib import reload
     reload(server_module)
     
+    # Re-import after reload to get updated values
+    from mcp_map_server.server import DEFAULT_LAYER_INFO as reloaded_default_layer_info
+    
     result = await server_module.get_prompt("data_layers", None)
     prompt_text = result.messages[0].content.text
     
@@ -65,7 +68,7 @@ async def test_default_prompt_content(monkeypatch):
     # Should contain example layer information
     assert "Protected Areas" in prompt_text or "WDPA" in prompt_text
     assert "Attributes" in prompt_text
-    assert "Examples" in prompt_text
+    assert "Example Usage Patterns" in prompt_text
     
     # Restore state for other tests if necessary
     monkeypatch.undo()
@@ -99,9 +102,11 @@ async def test_custom_prompt_from_env(monkeypatch):
 
 def test_default_prompt_structure():
     """Test that the default prompt has the expected structure"""
-    assert "Available Data Layers" in DEFAULT_LAYER_INFO
-    assert "MCP_MAP_SYSTEM_PROMPT" in DEFAULT_LAYER_INFO
-    assert "IUCN_CAT" in DEFAULT_LAYER_INFO
+    # Re-import to get current values
+    from mcp_map_server.server import DEFAULT_LAYER_INFO as current_default_layer_info
+    assert "Available Data Layers" in current_default_layer_info
+    assert "MCP_MAP_SYSTEM_PROMPT" in current_default_layer_info
+    assert "IUCN_CAT" in current_default_layer_info
 
 
 def test_system_prompt_loaded():

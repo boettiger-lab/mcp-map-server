@@ -59,6 +59,8 @@ DEFAULT_LAYER_INFO = """# Available Data Layers
 
 You have access to map visualization tools that can display geospatial data layers.
 
+*Note: These layer definitions can be customized by setting the `MCP_MAP_SYSTEM_PROMPT` environment variable with your own layer information.*
+
 ## Base Layers (Raster)
 
 ### OpenStreetMap Standard
