@@ -14,6 +14,8 @@ import contextlib
 from starlette.applications import Starlette
 from starlette.responses import Response
 from starlette.routing import Route
+from starlette.middleware import Middleware
+from starlette.middleware.cors import CORSMiddleware
 from sse_starlette.sse import EventSourceResponse
 
 from mcp.server import Server, NotificationOptions
@@ -599,7 +601,18 @@ routes = [
     Route("/", serve_static),
 ]
 
-app = Starlette(routes=routes, lifespan=lifespan)
+# Add CORS middleware for browser access
+middleware = [
+    Middleware(
+        CORSMiddleware,
+        allow_origins=["*"],  # Allow all origins for development
+        allow_methods=["*"],
+        allow_headers=["*"],
+        allow_credentials=True,
+    )
+]
+
+app = Starlette(routes=routes, middleware=middleware, lifespan=lifespan)
 
 
 async def run_stdio(host: str = "0.0.0.0", port: int = 8081):
