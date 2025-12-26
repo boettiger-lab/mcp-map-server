@@ -301,6 +301,14 @@
     <div class="config-overlay" id="configOverlay">
         <h3 style="margin-bottom: 15px; color: #333;">🗺️ MCP Map Assistant</h3>
 
+        <div class="config-row" style="margin-bottom: 15px;">
+            <label for="serverToggle">MCP Server:</label>
+            <select id="serverToggle" onchange="switchServer()">
+                <option value="production">Production</option>
+                <option value="local">Local (127.0.0.1:8081)</option>
+            </select>
+        </div>
+
         <button class="advanced-toggle" onclick="toggleLLMSettings()">
             <span>🤖 LLM Settings</span>
             <span class="toggle-icon" id="toggleIcon">▼</span>
@@ -399,8 +407,19 @@
         let mcpSessionId = null;
         let requestId = 0;
         let availableTools = [];
-        // Change this URL to test locally: 'http://127.0.0.1:8081/mcp/'
         let mcpServerUrl = 'https://mcp-map.nrp-nautilus.io/mcp/';
+
+        function switchServer() {
+            const toggle = document.getElementById('serverToggle');
+            if (toggle.value === 'local') {
+                mcpServerUrl = 'http://127.0.0.1:8081/mcp/';
+            } else {
+                mcpServerUrl = 'https://mcp-map.nrp-nautilus.io/mcp/';
+            }
+            // Reset session when switching servers
+            mcpSessionId = null;
+            showStatus('Server changed. Click Connect to reconnect.', 'error');
+        }
 
         // MCP JSON-RPC helper
         function createMCPRequest(method, params = {}) {
@@ -470,11 +489,23 @@
                 const initResult = await sendMCPRequest(initRequest);
                 console.log('Initialize result:', initResult);
 
-                // Send initialized notification
-                await sendMCPRequest({
+                // Send initialized notification (no response expected)
+                const notificationRequest = {
                     jsonrpc: '2.0',
                     method: 'notifications/initialized'
+                };
+                const notificationResponse = await fetch(mcpServerUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json, text/event-stream',
+                        'mcp-protocol-version': '2025-11-25',
+                        'mcp-session-id': mcpSessionId
+                    },
+                    body: JSON.stringify(notificationRequest)
                 });
+                // Notifications don't return a response, just consume the body
+                await notificationResponse.text();
 
                 // List available tools
                 const toolsRequest = createMCPRequest('tools/list');
@@ -528,14 +559,14 @@
             addMessage('assistant', 'Thinking...', true);
 
             try {
-                console.log('Sending message to LLM:', { provider, model, apiUrl: apiUrl.substring(0, 50) + '...' });
-                
                 // Determine API endpoint
                 const apiUrl = (provider === 'custom' && customEndpoint) ? customEndpoint : 'https://api.openai.com/v1/chat/completions';
 
                 if (!apiUrl) {
                     throw new Error('Please configure API endpoint');
                 }
+
+                console.log('Sending message to LLM:', { provider, model, apiUrl: apiUrl.substring(0, 50) + '...' });
 
                 // Use LLM to understand the request and generate tool calls
                 const response = await fetch(apiUrl, {
@@ -551,27 +582,26 @@
                                 role: 'system',
                                 content: `You are a helpful map assistant. You can create interactive maps using these MCP tools:
 
-${availableTools.map(tool => `- ${tool.name}: ${tool.description}`).join('\n')}
+${availableTools.map(tool => `- ${tool.name}: ${tool.description}
+  Required: ${JSON.stringify(tool.inputSchema.required || [])}
+  Properties: ${Object.keys(tool.inputSchema.properties || {}).join(', ')}`).join('\n\n')}
 
-Available layer types:
-- osm-base: OpenStreetMap base layer
-- satellite-base: Satellite imagery base layer  
-- wdpa: World Database on Protected Areas (filter by iso_alpha2 country codes like "US", "BR", iucn_cat)
-- overture-admin: Administrative boundaries (filter by admin_level, iso_country_code_alpha_2)
+Examples for add_layer:
+- Satellite base: {"name": "add_layer", "arguments": {"id": "satellite", "type": "raster", "source": {"type": "raster", "tiles": ["https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"], "tileSize": 256}, "session_id": "${mcpSessionId || 'default'}"}}
+- OSM base: {"name": "add_layer", "arguments": {"id": "osm", "type": "vector", "source": {"type": "vector", "url": "pmtiles://https://build.protomaps.com/20240619.pmtiles"}, "session_id": "${mcpSessionId || 'default'}"}}
 
 When creating maps:
-1. Start with a base layer (add_layer with osm-base or satellite-base)
-2. Add data layers as requested (add_layer with wdpa, overture-admin, etc.)
-3. Apply appropriate filters using filter_layer
-4. Set the map view to show the relevant area using set_map_view
+1. Start with a base layer using add_layer (satellite or OSM)
+2. Set the map view with set_map_view to show the area
+3. Add data layers if requested
 
 Always include session_id parameter set to "${mcpSessionId || 'default'}" in all tool calls.
 Always use real geographic coordinates and appropriate zoom levels.
 
 Respond with tool calls in this exact format:
-TOOL_CALL: {"name": "tool_name", "arguments": {"param": "value", "session_id": "${mcpSessionId || 'default'}"}}
+TOOL_CALL: {"name": "tool_name", "arguments": {...}}
 
-You can make multiple tool calls by having multiple TOOL_CALL lines.`
+You can make multiple TOOL_CALL lines.`
                             },
                             { role: 'user', content: message }
                         ],
@@ -586,15 +616,15 @@ You can make multiple tool calls by having multiple TOOL_CALL lines.`
                 }
 
                 const result = await response.json();
-                
+
                 if (!result.choices || !result.choices[0]?.message?.content) {
                     throw new Error('Invalid response from LLM API');
                 }
-                
+
                 const assistantResponse = result.choices[0].message.content;
 
                 // Extract and execute tool calls
-                const toolCallRegex = /TOOL_CALL:\s*({[^}]+})/g;
+                const toolCallRegex = /TOOL_CALL:\s*(\{.+?\}(?=\s*(?:TOOL_CALL:|$)))/gs;
                 let match;
                 let responseText = assistantResponse;
                 let toolsExecuted = 0;
