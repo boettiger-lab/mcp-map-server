@@ -1,0 +1,14 @@
+name: MCP map server
+version: 0.0.1
+schema: v1
+mcpServers:
+  - name: MCP Map server
+    command: uv
+    args:
+      - run
+      - mcp-map-server
+      - --transport
+      - stdio
+      - --prompt-file
+      - system-prompt.example.md
+    env: {}
