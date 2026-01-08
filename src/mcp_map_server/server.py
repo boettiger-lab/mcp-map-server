@@ -4,58 +4,102 @@ MCP Map Server - Streamable HTTP (Redis-free)
 """
 
 import asyncio
-import json
-import uuid
-import os
-from typing import Any, AsyncIterator
-from pathlib import Path
 import contextlib
+import json
+import os
+import uuid
+from pathlib import Path
+from typing import Any, AsyncIterator
 
+import mcp.types as types
+from mcp.server import NotificationOptions, Server
+from mcp.server.models import InitializationOptions
+from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
+from mcp.types import GetPromptResult, Prompt, PromptMessage, TextContent, Tool
+from sse_starlette.sse import EventSourceResponse
 from starlette.applications import Starlette
-from starlette.responses import Response
-from starlette.routing import Route
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
-from sse_starlette.sse import EventSourceResponse
-
-from mcp.server import Server, NotificationOptions
-from mcp.server.streamable_http_manager import StreamableHTTPSessionManager
-from mcp.types import Tool, TextContent, Prompt, PromptMessage, GetPromptResult
-from mcp.server.models import InitializationOptions
-import mcp.types as types
+from starlette.responses import Response
+from starlette.routing import Route
 
 # --- Global In-Memory State ---
 sessions = {}
 VIEWER_BASE_URL = "http://localhost:8081"
 
+
 def get_session(session_id: str, default_state: dict | None = None):
     if session_id not in sessions:
         sessions[session_id] = {
-            "state": default_state or {
-                "version": 1,
-                "center": [-98.5795, 39.8283],
-                "zoom": 4,
-                "layers": {}
-            },
-            "queues": []
+            "state": default_state
+            or {"version": 1, "center": [-98.5795, 39.8283], "zoom": 4, "layers": {}},
+            "queues": [],
         }
     return sessions[session_id]
+
 
 async def notify_session(session_id: str, state: dict):
     if session_id in sessions:
         for queue in sessions[session_id]["queues"]:
             await queue.put(state)
 
+
 # --- Configuration ---
 CORE_INSTRUCTIONS = """# MCP Map Server - Instructions
 
-This server provides tools to control a MapLibre GL JS map viewer. Each tool maps directly to MapLibre GL JS concepts.
+This server provides 7 tools to control a MapLibre GL JS map viewer. Each tool maps directly to MapLibre GL JS concepts.
 
-- **add_layer**: Use this to add a MapLibre source and its associated layers in one call.
-- **Source IDs**: The `id` you provide is used as the MapLibre `source-id`. 
-- **Sub-layers**: For vector sources, you MUST provide an array of MapLibre layer objects in the `layers` property. For each sub-layer, the `source` property will automatically be set to your layer `id` if you omit it.
-- **Coordinates**: All coordinates are [Longitude, Latitude] (WGS84).
+## Available Tools
+
+### 1. add_layer
+Add a MapLibre source and its associated layers to the map.
+- The `id` you provide becomes the MapLibre `source-id`
+- For **vector sources**: MUST provide an array of MapLibre layer objects in the `layers` property
+- For **raster sources**: A default layer is auto-created if `layers` is omitted
+- For sub-layers, the `source` property will automatically be set to your layer `id` if omitted
+- Specify `visible: false` to add a layer but keep it hidden initially
+
+### 2. remove_layer
+Remove a layer and its associated source from the map.
+- Provide the layer `id` to remove
+
+### 3. set_map_view
+Move the map camera to a specific location and zoom level.
+- `center`: [longitude, latitude] array (WGS84)
+- `zoom`: Zoom level (typically 0-22, where 0 is world view, 22 is maximum detail)
+
+### 4. list_layers
+List all currently active layers in the session.
+- Returns an array of layer IDs
+
+### 5. filter_layer
+Apply a MapLibre filter expression to a layer and all its sub-layers.
+- Uses MapLibre filter syntax: `["==", ["get", "property"], "value"]`
+- Common operators: `==`, `!=`, `>`, `<`, `>=`, `<=`, `in`, `has`
+- Example: `["==", ["get", "ISO3"], "USA"]` filters to USA only
+
+### 6. set_layer_paint
+Set MapLibre paint properties (colors, opacity, etc.) for a layer and all its sub-layers.
+- Common properties: `fill-color`, `fill-opacity`, `line-color`, `line-width`, `raster-opacity`
+- Values can be static or expressions (e.g., color by attribute using `match`)
+
+### 7. get_map_config
+Return the current map configuration as JSON.
+- Useful for inspecting current state or passing as `state` argument to other tools
+
+## Key Concepts
+
+**Coordinates**: All coordinates are [Longitude, Latitude] in WGS84 (EPSG:4326)
+
+**PMTiles**: When using PMTiles sources, pay attention to:
+- Source URL format: `pmtiles://https://...`
+- `source-layer` name in layer definitions (e.g., `"source-layer": "wdpa"`)
+
+**Filtering & Styling**: Always check the available attributes for each data layer before filtering or styling.
+
+**Layer Ordering**: Layers are rendered in the order they are added (first added = bottom, last added = top)
 """
+
 
 DEFAULT_LAYER_INFO = """# Available Data Layers
 
@@ -231,32 +275,54 @@ You have access to map visualization tools that can display geospatial data laye
 - **Use meaningful colors** and opacity for multiple overlapping layers
 """
 
-def load_system_prompt(prompt_file: str | None = None, prompt_text: str | None = None) -> str:
+
+def load_system_prompt(
+    prompt_file: str | None = None, prompt_text: str | None = None
+) -> str:
     """
     Load dynamic layer information from various sources.
     Priority: prompt_text > prompt_file > MCP_MAP_SYSTEM_PROMPT > DEFAULT_LAYER_INFO
     """
     if prompt_text:
         return prompt_text
-    
+
     if prompt_file:
         file_path = Path(prompt_file)
         if not file_path.exists():
             raise FileNotFoundError(f"Prompt file not found: {prompt_file}")
         return file_path.read_text()
-    
+
     env_prompt = os.getenv("MCP_MAP_SYSTEM_PROMPT")
     if env_prompt:
         return env_prompt
-    
+
     return DEFAULT_LAYER_INFO
+
 
 # Initialize dynamic layer info (can be overridden in main())
 LAYER_INFO = load_system_prompt()
 
+# --- Tool-Injected Context (for clients that don't support resources/prompts) ---
+# This context is injected into tool descriptions so it's always visible
+def get_tool_injected_context() -> str:
+    """Get the context to inject into tool descriptions"""
+    return f"""
+
+---
+## 📚 AVAILABLE DATA LAYERS & USAGE CONTEXT
+
+{LAYER_INFO}
+
+---
+"""
+
+# Global context that will be updated when LAYER_INFO changes
+TOOL_INJECTED_CONTEXT = get_tool_injected_context()
+
 
 # --- MCP Server ---
 server = Server("mcp-map-server-stream")
+
 
 @server.list_tools()
 async def list_tools() -> list[Tool]:
@@ -264,20 +330,44 @@ async def list_tools() -> list[Tool]:
     return [
         Tool(
             name="add_layer",
-            description="Add a MapLibre source and one or more layers. Maps to `map.addSource()` and `map.addLayer()`.",
+            description=f"Add a MapLibre source and one or more layers. Maps to `map.addSource()` and `map.addLayer()`.{TOOL_INJECTED_CONTEXT}",
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "session_id": {"type": "string", "description": "Session ID (default: 'default')"},
-                    "state": {"type": "string", "description": "Optional initial map state JSON string."},
-                    "id": {"type": "string", "description": "Unique identifier for the source and logical layer."},
-                    "type": {"type": "string", "enum": ["raster", "vector"], "description": "The type of data source."},
-                    "source": {"type": "object", "description": "MapLibre source configuration (e.g. {type: 'vector', url: '...'})"},
-                    "layers": {"type": "array", "items": {"type": "object"}, "description": "Array of MapLibre layer objects. If omitted for 'raster', a default layer is created."},
-                    "visible": {"type": "boolean", "default": True, "description": "Initial visibility."}
+                    "session_id": {
+                        "type": "string",
+                        "description": "Session ID (default: 'default')",
+                    },
+                    "state": {
+                        "type": "string",
+                        "description": "Optional initial map state JSON string.",
+                    },
+                    "id": {
+                        "type": "string",
+                        "description": "Unique identifier for the source and logical layer.",
+                    },
+                    "type": {
+                        "type": "string",
+                        "enum": ["raster", "vector"],
+                        "description": "The type of data source.",
+                    },
+                    "source": {
+                        "type": "object",
+                        "description": "MapLibre source configuration (e.g. {type: 'vector', url: '...'})",
+                    },
+                    "layers": {
+                        "type": "array",
+                        "items": {"type": "object"},
+                        "description": "Array of MapLibre layer objects. If omitted for 'raster', a default layer is created.",
+                    },
+                    "visible": {
+                        "type": "boolean",
+                        "default": True,
+                        "description": "Initial visibility.",
+                    },
                 },
-                "required": ["id", "type", "source"]
-            }
+                "required": ["id", "type", "source"],
+            },
         ),
         Tool(
             name="remove_layer",
@@ -286,25 +376,41 @@ async def list_tools() -> list[Tool]:
                 "type": "object",
                 "properties": {
                     "session_id": {"type": "string", "description": "The session ID."},
-                    "state": {"type": "string", "description": "Optional map state JSON string."},
-                    "id": {"type": "string", "description": "The ID of the layer/source to remove."}
+                    "state": {
+                        "type": "string",
+                        "description": "Optional map state JSON string.",
+                    },
+                    "id": {
+                        "type": "string",
+                        "description": "The ID of the layer/source to remove.",
+                    },
                 },
-                "required": ["id"]
-            }
+                "required": ["id"],
+            },
         ),
         Tool(
             name="set_map_view",
-            description="Move the map camera to a specific center and zoom level.",
+            description=f"Move the map camera to a specific center and zoom level.{TOOL_INJECTED_CONTEXT}",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "session_id": {"type": "string", "description": "The session ID."},
-                    "state": {"type": "string", "description": "Optional map state JSON string."},
-                    "center": {"type": "array", "items": {"type": "number"}, "description": "[longitude, latitude] array."},
-                    "zoom": {"type": "number", "description": "Zoom level (e.g. 0-22)."}
+                    "state": {
+                        "type": "string",
+                        "description": "Optional map state JSON string.",
+                    },
+                    "center": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "description": "[longitude, latitude] array.",
+                    },
+                    "zoom": {
+                        "type": "number",
+                        "description": "Zoom level (e.g. 0-22).",
+                    },
                 },
-                "required": []
-            }
+                "required": [],
+            },
         ),
         Tool(
             name="list_layers",
@@ -313,38 +419,58 @@ async def list_tools() -> list[Tool]:
                 "type": "object",
                 "properties": {
                     "session_id": {"type": "string", "description": "The session ID."},
-                    "state": {"type": "string", "description": "Optional map state JSON string."}
-                }
-            }
+                    "state": {
+                        "type": "string",
+                        "description": "Optional map state JSON string.",
+                    },
+                },
+            },
         ),
         Tool(
             name="filter_layer",
-            description="Apply a MapLibre filter expression to a layer and all its sub-layers.",
+            description=f"Apply a MapLibre filter expression to a layer and all its sub-layers.{TOOL_INJECTED_CONTEXT}",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "session_id": {"type": "string", "description": "The session ID."},
-                    "state": {"type": "string", "description": "Optional map state JSON string."},
-                    "layer_id": {"type": "string", "description": "The ID of the layer to filter."},
-                    "filter": {"description": "MapLibre filter expression (e.g. ['==', 'property', 'value'])"}
+                    "state": {
+                        "type": "string",
+                        "description": "Optional map state JSON string.",
+                    },
+                    "layer_id": {
+                        "type": "string",
+                        "description": "The ID of the layer to filter.",
+                    },
+                    "filter": {
+                        "description": "MapLibre filter expression (e.g. ['==', 'property', 'value'])"
+                    },
                 },
-                "required": ["layer_id", "filter"]
-            }
+                "required": ["layer_id", "filter"],
+            },
         ),
-         Tool(
+        Tool(
             name="set_layer_paint",
-            description="Set MapLibre paint properties (e.g. colors, opacity) for a layer and all its sub-layers.",
+            description=f"Set MapLibre paint properties (e.g. colors, opacity) for a layer and all its sub-layers.{TOOL_INJECTED_CONTEXT}",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "session_id": {"type": "string", "description": "The session ID."},
-                    "state": {"type": "string", "description": "Optional map state JSON string."},
-                    "layer_id": {"type": "string", "description": "The ID of the layer to style."},
-                    "property": {"type": "string", "description": "The paint property name (e.g. 'fill-color', 'raster-opacity')."},
-                    "value": {"description": "The new value for the paint property."}
+                    "state": {
+                        "type": "string",
+                        "description": "Optional map state JSON string.",
+                    },
+                    "layer_id": {
+                        "type": "string",
+                        "description": "The ID of the layer to style.",
+                    },
+                    "property": {
+                        "type": "string",
+                        "description": "The paint property name (e.g. 'fill-color', 'raster-opacity').",
+                    },
+                    "value": {"description": "The new value for the paint property."},
                 },
-                "required": ["layer_id", "property", "value"]
-            }
+                "required": ["layer_id", "property", "value"],
+            },
         ),
         Tool(
             name="get_map_config",
@@ -353,11 +479,15 @@ async def list_tools() -> list[Tool]:
                 "type": "object",
                 "properties": {
                     "session_id": {"type": "string", "description": "The session ID."},
-                    "state": {"type": "string", "description": "Optional map state JSON string."}
-                }
-            }
-        )
+                    "state": {
+                        "type": "string",
+                        "description": "Optional map state JSON string.",
+                    },
+                },
+            },
+        ),
     ]
+
 
 @server.list_prompts()
 async def list_prompts() -> list[Prompt]:
@@ -366,30 +496,29 @@ async def list_prompts() -> list[Prompt]:
         Prompt(
             name="data_layers",
             description="Information about available map data layers, their attributes, and how to use them",
-            arguments=[]
+            arguments=[],
         )
     ]
 
+
 @server.get_prompt()
-async def get_prompt(name: str, arguments: dict[str, str] | None = None) -> GetPromptResult:
+async def get_prompt(
+    name: str, arguments: dict[str, str] | None = None
+) -> GetPromptResult:
     """Get a prompt by name"""
     if name != "data_layers":
         raise ValueError(f"Unknown prompt: {name}")
-    
+
     # Combine fixed core instructions with dynamic layer information
     full_prompt = f"{CORE_INSTRUCTIONS}\n\n{LAYER_INFO}"
-    
+
     return GetPromptResult(
         description="Core instructions and information about available map data layers",
         messages=[
             PromptMessage(
-                role="user",
-                content=TextContent(
-                    type="text",
-                    text=full_prompt
-                )
+                role="user", content=TextContent(type="text", text=full_prompt)
             )
-        ]
+        ],
     )
 
 
@@ -398,16 +527,18 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
     # Extract inputs
     session_id = arguments.get("session_id", "default")
     input_state_str = arguments.get("state")
-    
+
     # Logic for stateless vs stateful
     is_stateless = input_state_str is not None
-    
+
     if is_stateless:
         try:
             state = json.loads(input_state_str)
-            session_id = None # Do not notify any active sessions if stateless
+            session_id = None  # Do not notify any active sessions if stateless
         except json.JSONDecodeError:
-            return [TextContent(type="text", text=f"Error: Invalid 'state' JSON provided")]
+            return [
+                TextContent(type="text", text=f"Error: Invalid 'state' JSON provided")
+            ]
     else:
         session = get_session(session_id)
         state = session["state"]
@@ -419,10 +550,10 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
             source = arguments["source"]
             layers = arguments.get("layers", [])
             visible = arguments.get("visible", True)
-            
+
             if layer_type == "raster" and not layers:
                 layers = [{"id": layer_id, "type": "raster", "source": layer_id}]
-            
+
             # Ensure all sub-layers have the correct source ID
             injected_layers = []
             for lyr in layers:
@@ -434,7 +565,7 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
                     new_lyr["source"] = layer_id
                 injected_layers.append(new_lyr)
             layers = injected_layers
-            
+
             state["layers"][layer_id] = {
                 "id": layer_id,
                 "type": layer_type,
@@ -442,7 +573,7 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
                 "source": source,
                 "layers": layers,
                 "layer_paint": {},
-                "layer_filters": {}
+                "layer_filters": {},
             }
             state["version"] += 1
 
@@ -483,12 +614,12 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
                 layer_config = state["layers"][layer_id]
                 if "layer_paint" not in layer_config:
                     layer_config["layer_paint"] = {}
-                
+
                 for sl in layer_config.get("layers", []):
                     if sl["id"] not in layer_config["layer_paint"]:
                         layer_config["layer_paint"][sl["id"]] = {}
                     layer_config["layer_paint"][sl["id"]][prop] = val
-                
+
                 if not layer_config.get("layers"):
                     if layer_id not in layer_config["layer_paint"]:
                         layer_config["layer_paint"][layer_id] = {}
@@ -498,9 +629,9 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
         elif name == "list_layers":
             lyr_list = list(state["layers"].keys())
             return [TextContent(type="text", text=f"Layers: {lyr_list}")]
-            
+
         elif name == "get_map_config":
-            pass # We return the state anyway
+            pass  # We return the state anyway
 
         else:
             return [TextContent(type="text", text=f"Unknown tool: {name}")]
@@ -508,19 +639,19 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
         # Notify if stateful
         if not is_stateless and session_id:
             await notify_session(session_id, state)
-            
+
         # Always return the full updated state as JSON
         state_json = json.dumps(state, indent=2)
-        
+
         # Build viewer URL
         viewer_url = VIEWER_BASE_URL
         if not is_stateless and session_id:
             viewer_url = f"{viewer_url}/?session={session_id}"
-        
+
         return [
             TextContent(
-                type="text", 
-                text=f"Success. View map at: {viewer_url}\n\nUpdated map configuration:\n\n```json\n{state_json}\n```\n\nYou can use this JSON in a MapViewer or as the 'state' argument for follow-up tool calls."
+                type="text",
+                text=f"Success. View map at: {viewer_url}\n\nUpdated map configuration:\n\n```json\n{state_json}\n```\n\nYou can use this JSON in a MapViewer or as the 'state' argument for follow-up tool calls.",
             )
         ]
 
@@ -530,21 +661,22 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
 
 # --- Starlette App & Transport ---
 
+
 async def handle_sse(request):
     """SSE endpoint for browser updates"""
     session_id = request.query_params.get("session")
     if not session_id:
         session_id = request.cookies.get("mcp_map_session")
-    
+
     if not session_id:
         session_id = str(uuid.uuid4())
-        # Note: browser must handle cookie setting from response if needed, 
+        # Note: browser must handle cookie setting from response if needed,
         # or we rely on the JS to set it initially if missing.
-    
+
     session = get_session(session_id)
     queue = asyncio.Queue()
     session["queues"].append(queue)
-    
+
     print(f"[MapSSE] New connection for session {session_id}")
 
     async def event_generator():
@@ -561,11 +693,13 @@ async def handle_sse(request):
 
     return EventSourceResponse(event_generator())
 
+
 async def serve_static(request):
     """Serve the map viewer HTML"""
     # Use importlib to find the resource within the package
     try:
         from importlib.resources import files
+
         html_content = files("mcp_map_server").joinpath("client.html").read_text()
         return Response(content=html_content, media_type="text/html")
     except Exception:
@@ -575,16 +709,19 @@ async def serve_static(request):
             return Response(content=html_path.read_text(), media_type="text/html")
         return Response("client.html not found", status_code=404)
 
+
 # Create Session Manager
 session_manager = StreamableHTTPSessionManager(
-    server, 
-    stateless=False # We want to track sessions
+    server,
+    stateless=False,  # We want to track sessions
 )
+
 
 @contextlib.asynccontextmanager
 async def lifespan(app: Starlette) -> AsyncIterator[None]:
     async with session_manager.run():
         yield
+
 
 async def handle_mcp(scope, receive, send):
     """MCP endpoint using Streamable HTTP Session Manager"""
@@ -608,7 +745,10 @@ middleware = [
         allow_origins=["*"],  # Allow all origins for development
         allow_methods=["*"],
         allow_headers=["*"],
-        expose_headers=["mcp-session-id", "mcp-protocol-version"],  # Expose MCP headers to browser
+        expose_headers=[
+            "mcp-session-id",
+            "mcp-protocol-version",
+        ],  # Expose MCP headers to browser
         allow_credentials=True,
     )
 ]
@@ -617,14 +757,14 @@ app = Starlette(routes=routes, middleware=middleware, lifespan=lifespan)
 
 
 async def run_stdio(host: str = "0.0.0.0", port: int = 8081):
-    from mcp.server.stdio import stdio_server
     import uvicorn
-    
+    from mcp.server.stdio import stdio_server
+
     # Start HTTP server in background so viewer remains accessible
     config = uvicorn.Config(app, host=host, port=port, log_level="error")
     http_server = uvicorn.Server(config)
     background_task = asyncio.create_task(http_server.serve())
-    
+
     async with stdio_server() as (read_stream, write_stream):
         await server.run(
             read_stream,
@@ -638,26 +778,37 @@ async def run_stdio(host: str = "0.0.0.0", port: int = 8081):
                 ),
             ),
         )
-    
+
     # Clean up background server
     http_server.should_exit = True
     await background_task
 
+
 def main():
-    import uvicorn
     import argparse
-    global LAYER_INFO, VIEWER_BASE_URL
-    
+
+    import uvicorn
+
+    global LAYER_INFO, VIEWER_BASE_URL, TOOL_INJECTED_CONTEXT
+
     parser = argparse.ArgumentParser(description="MCP Map Server")
-    parser.add_argument("--transport", choices=["stdio", "http"], default="stdio", help="Transport to use (stdio or http)")
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "http"],
+        default="stdio",
+        help="Transport to use (stdio or http)",
+    )
     parser.add_argument("--host", default="0.0.0.0", help="Host to bind to")
     parser.add_argument("--port", type=int, default=8081, help="Port to bind to")
-    parser.add_argument("--base-url", help="Public base URL for the viewer links (e.g. https://map.example.com)")
+    parser.add_argument(
+        "--base-url",
+        help="Public base URL for the viewer links (e.g. https://map.example.com)",
+    )
     parser.add_argument("--prompt", help="System prompt text")
     parser.add_argument("--prompt-file", help="Path to system prompt markdown file")
-    
+
     args = parser.parse_args()
-    
+
     # Set global base URL for tool links
     if args.base_url:
         VIEWER_BASE_URL = args.base_url.rstrip("/")
@@ -668,17 +819,23 @@ def main():
 
     # Update global LAYER_INFO based on CLI args
     try:
-        LAYER_INFO = load_system_prompt(prompt_file=args.prompt_file, prompt_text=args.prompt)
+        LAYER_INFO = load_system_prompt(
+            prompt_file=args.prompt_file, prompt_text=args.prompt
+        )
+        # Regenerate tool-injected context with updated LAYER_INFO
+        TOOL_INJECTED_CONTEXT = get_tool_injected_context()
     except Exception as e:
         print(f"Error loading prompt: {e}")
         import sys
+
         sys.exit(1)
-        
+
     if args.transport == "stdio":
         asyncio.run(run_stdio(host=args.host, port=args.port))
     else:
         print(f"Starting HTTP server on {args.host}:{args.port}")
         uvicorn.run(app, host=args.host, port=args.port)
+
 
 if __name__ == "__main__":
     main()

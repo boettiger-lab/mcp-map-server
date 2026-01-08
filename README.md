@@ -2,12 +2,9 @@
 
 A Model Context Protocol (MCP) server that provides a dynamic map interface. This robust Python server enables AI agents to control a MapLibre GL JS - based map viewer, allowing for real-time visualization of geospatial data.
 
-![Map View](https://github.com/boettiger-lab/mcp-map-server/raw/main/docs/map-view.png)
 
 ## Features
 
--   **MCP & HTTP Support**: Implements the Model Context Protocol using `StreamableHTTPServerTransport`.
--   **Real-time Updates**: Uses Server-Sent Events (SSE) to push map state changes to the browser instantly.
 -   **Interactive Map**: Powered by MapLibre GL JS for high-performance vector and raster mapping.
 -   **Tooling**: Provides MCP tools to:
     -   Add/Remove layers (Raster & Vector)
@@ -15,6 +12,24 @@ A Model Context Protocol (MCP) server that provides a dynamic map interface. Thi
     -   Filter data
     -   Style layers
 -   **In-Memory State**: Simple, stateless deployment model (ideal for K8s).
+
+
+## Quick Start
+
+### Local Development
+
+1.  **Start the server:**
+    ```bash
+    uv run mcp-map-server
+    ```
+
+3.  **Open the Map:**
+    Navigate to `http://localhost:8081` in your browser.
+
+4.  **Connect an MCP Client:**
+    Configure your MCP client (e.g., Claude Desktop, Cursor, or a custom script) to connect to `http://localhost:8081/mcp/`.
+
+
 
 ## Architecture
 
@@ -27,30 +42,6 @@ A Model Context Protocol (MCP) server that provides a dynamic map interface. Thi
 2.  **MCP Client (AI Agent)**: Connects to `/mcp` to call tools and modify the map state.
 
 3.  **Map Viewer (Browser)**: Connects to `/events` to receive state updates and render them using MapLibre GL JS.
-
-## Quick Start
-
-### Local Development
-
-1.  **Clone and install:**
-    ```bash
-    git clone https://github.com/boettiger-lab/mcp-map-server.git
-    cd mcp-map-server
-    python -m venv .venv
-    source .venv/bin/activate
-    pip install -e .[dev]
-    ```
-
-2.  **Start the server:**
-    ```bash
-    mcp-map-server
-    ```
-
-3.  **Open the Map:**
-    Navigate to `http://localhost:8081` in your browser.
-
-4.  **Connect an MCP Client:**
-    Configure your MCP client (e.g., Claude Desktop, Cursor, or a custom script) to connect to `http://localhost:8081/mcp/`.
 
 ### Running Tests
 
@@ -149,14 +140,12 @@ To use this with MCP-compatible clients like Claude Desktop or VSCode extensions
 
 Local clients like Claude Desktop and VSCode expect **StdIO** transport when launching a command. The server now defaults to `stdio`.
 
-> [!TIP]
-> Use the **absolute path** to the executable in your config to avoid "command not found" (ENOENT) errors. Find it by running `which mcp-map-server`.
 
 ```json
 {
   "mcpServers": {
     "map-server": {
-      "command": "/home/cboettig/.local/bin/mcp-map-server"
+      "command": "uv run mcp-map-server"
     }
   }
 }
@@ -173,7 +162,7 @@ If you need to specify the transport explicitly or provide a custom system promp
 {
   "mcpServers": {
     "map-server": {
-      "command": "/home/cboettig/.local/bin/mcp-map-server",
+      "command": "uv run mcp-map-server",
       "args": [
         "--transport", "stdio",
         "--prompt-file", "/path/to/my-layers.md"
