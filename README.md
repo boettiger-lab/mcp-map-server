@@ -2,10 +2,16 @@
 
 A Model Context Protocol (MCP) server that provides a dynamic map interface. 
 
+
+
+![start button](docs/img/map-tool.gif)
+
+
+
+
 ## Quick Start
 
 Add the hosted MCP endpoint to your LLM client, like so: 
-
 
 ### Using VSCode
 
@@ -31,12 +37,11 @@ create a  `.vscode/mcp.json` like this: ([as in this repo](.vscode/mcp.json))
 
 You should see a little icon appear above the entry to "Start" server, like so: 
 
-![alt text](docs/img/start.png)
+![start button](docs/img/start.png)
 
+![claude call](docs/img/claude.png)
 
-
-
-
+![alt text](docs/img/map.png)
 
 
 
