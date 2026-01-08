@@ -19,3 +19,4 @@ map_state.json
 *~
 server.log
 .continue/agents/new-config.yaml
+.continue/agents
