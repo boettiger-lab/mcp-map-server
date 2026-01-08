@@ -18,3 +18,4 @@ map_state.json
 *.swo
 *~
 server.log
+.continue/agents/new-config.yaml
