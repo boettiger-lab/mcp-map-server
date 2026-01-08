@@ -5,6 +5,7 @@ You have access to map visualization tools that can display geospatial data laye
 
 IMPORTANT:
 
+- ALWAYS include a basemap (e.g. openstreetmap tiles).  Add basemap BEFORE adding layers.
 - PAY ATTENTION to the SOURCE LAYER name when working with PMTiles.
 - PAY ATTENTION to the ATTRIBUTE list when filtering or styling.
 
